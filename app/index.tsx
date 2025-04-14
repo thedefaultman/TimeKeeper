@@ -5,7 +5,8 @@ import {
   FlatList,
   Alert,
   SafeAreaView,
-  TouchableOpacity, // Can add onPress to the View wrapping LinearGradient if needed
+  TouchableOpacity,
+  ActivityIndicator, // Added for loading state
 } from "react-native";
 import {
   Modal,
@@ -40,7 +41,7 @@ interface Counter {
 const STORAGE_KEY = "@days_since_app_data_v2"; // Use versioned key
 
 // --- Main App Component ---
-// Remember to wrap your root App component with <PaperProvider>
+
 export default function Index() {
   const theme = useTheme(); // Access theme colors
   const [counters, setCounters] = useState<Counter[]>([]);
@@ -51,12 +52,10 @@ export default function Index() {
   const [tick, setTick] = useState(0); // State to force updates for elapsed time
 
   // --- Font Loading ---
-  // TODO: Replace with actual paths to fonts that match the target UI
   const [loaded, error] = useFonts({
     "Roboto-Regular": require("@/assets/fonts/roboto.ttf"),
-    "Roboto-Bold": require("@/assets/fonts/roboto.ttf"),
-    // Example: "Target-Bold-Font": require("@/assets/fonts/YourTargetBoldFont.otf"),
-    // Example: "Target-Regular-Font": require("@/assets/fonts/YourTargetRegularFont.ttf"),
+    "Roboto-Bold": require("@/assets/fonts/boldonse.ttf"), // Ensure this path is correct
+    "my-font": require("@/assets/fonts/myfont.ttf"), // Ensure this path is correct
   });
 
   // --- Load Counters from Storage ---
@@ -68,11 +67,11 @@ export default function Index() {
           const parsedCounters: Partial<Counter>[] = JSON.parse(storedCounters);
           const correctedCounters: Counter[] = parsedCounters.map(
             (c, index) => ({
-              id: c.id || `${Date.now()}-${index}`, // Fallback ID
-              name: c.name || "Unnamed Counter", // Fallback name
-              createdAt: c.createdAt || Date.now(), // Default createdAt if missing
-              isArchived: c.isArchived || false, // Default archive status
-              hasNotification: c.hasNotification || false, // Default notification status
+              id: c.id || `${Date.now()}-${index}`,
+              name: c.name || "Unnamed Counter",
+              createdAt: c.createdAt || Date.now(),
+              isArchived: c.isArchived === true, // Ensure boolean
+              hasNotification: c.hasNotification === true, // Ensure boolean
             })
           );
           setCounters(correctedCounters);
@@ -81,23 +80,21 @@ export default function Index() {
         console.error("Failed to load counters.", e);
         Alert.alert("Error", "Could not load saved counters.");
       } finally {
-        setIsDataLoaded(true); // Mark data loading as complete (or failed)
+        setIsDataLoaded(true);
       }
     };
     loadCounters();
-  }, []); // Empty dependency array: runs only once on mount
+  }, []);
 
   // --- Hide Splash Screen ---
   useEffect(() => {
-    // Hide splash screen only when BOTH fonts are loaded AND initial data is loaded
     if ((loaded || error) && isDataLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, error, isDataLoaded]); // Depend on font and data loading status
+  }, [loaded, error, isDataLoaded]);
 
   // --- Save Counters to Storage ---
   useEffect(() => {
-    // Don't save until initial data is loaded to prevent overwriting
     if (!isDataLoaded) {
       return;
     }
@@ -109,30 +106,38 @@ export default function Index() {
       }
     };
     saveCounters();
-  }, [counters, isDataLoaded]); // Depend on counters and data loaded flag
+  }, [counters, isDataLoaded]);
 
   // --- Global Timer for Live Elapsed Time Updates ---
   useEffect(() => {
-    // No timer needed if there are no counters
-    if (counters.length === 0) return;
+    // Only run the timer if there are non-archived counters that are less than a day old
+    const activeTimeCounters = counters.filter(
+      (c) => !c.isArchived && Date.now() - c.createdAt < 24 * 60 * 60 * 1000
+    );
+    if (activeTimeCounters.length === 0) {
+      // console.log("No active time counters, stopping timer.");
+      return; // No need for a timer if only days are shown or only archived items exist
+    }
+    // console.log("Active time counters found, starting timer.");
 
-    // Interval to trigger re-renders every second
     const intervalId = setInterval(() => {
-      setTick((prev) => prev + 1); // Force component update
+      setTick((prev) => prev + 1);
     }, 1000); // Update every second
 
-    // Cleanup function to clear interval when component unmounts
-    // or when the number of counters becomes 0
-    return () => clearInterval(intervalId);
-  }, [counters.length]); // Re-run effect if the number of counters changes
+    // Cleanup function
+    return () => {
+      // console.log("Cleaning up timer.");
+      clearInterval(intervalId);
+    };
+    // Rerun when counters change, or when view changes (to potentially stop/start timer if view switches to/from 'Past')
+  }, [counters, currentView]);
 
   // --- Filtered Counters for Display ---
-  // useMemo ensures this filtering only runs when necessary
   const displayedCounters = useMemo(() => {
+    // console.log(`Filtering counters for view: ${currentView}`);
     return counters.filter((c) =>
       currentView === "current" ? !c.isArchived : c.isArchived
     );
-    // Relies on 'tick' indirectly via component re-render triggering useMemo check
   }, [counters, currentView]);
 
   // --- Action Handlers ---
@@ -144,14 +149,13 @@ export default function Index() {
     const newCounter: Counter = {
       id: Date.now().toString(),
       name: newCounterName.trim(),
-      createdAt: Date.now(), // Set creation timestamp
-      isArchived: false, // New counters are 'current'
-      hasNotification: false, // Default notification state
+      createdAt: Date.now(),
+      isArchived: false,
+      hasNotification: false,
     };
-    // Add the new counter to the beginning of the list for visibility
     setCounters((prevCounters) => [newCounter, ...prevCounters]);
-    setNewCounterName(""); // Clear input
-    setIsModalVisible(false); // Close modal
+    setNewCounterName("");
+    setIsModalVisible(false);
   };
 
   const handleDeleteCounter = (id: string) => {
@@ -176,158 +180,143 @@ export default function Index() {
     );
   };
 
-  // Placeholder/Example for archiving - Implement with better UI later
   const handleArchiveToggle = (id: string) => {
-    const targetCounter = counters.find((c) => c.id === id); // Find before updating state
+    const targetCounter = counters.find((c) => c.id === id);
+    if (!targetCounter) return;
+
+    const nextIsArchived = !targetCounter.isArchived;
     setCounters((prevCounters) =>
       prevCounters.map((counter) =>
-        counter.id === id
-          ? { ...counter, isArchived: !counter.isArchived }
-          : counter
+        counter.id === id ? { ...counter, isArchived: nextIsArchived } : counter
       )
     );
-    // Provide feedback - maybe use a Snackbar from react-native-paper
     Alert.alert(
-      !targetCounter?.isArchived ? "Archived" : "Unarchived", // Check original status for message
-      `"${targetCounter?.name}" moved to ${
-        !targetCounter?.isArchived ? "Past" : "Current"
-      }.`
+      nextIsArchived ? "Archived" : "Unarchived",
+      `"${targetCounter.name}" moved to ${nextIsArchived ? "Past" : "Current"}.`
     );
   };
 
   // --- Render Item for FlatList ---
-  // useCallback helps optimize FlatList rendering if props don't change
   const renderCounterItem = useCallback(
     ({ item }: { item: Counter }) => {
-      const now = Date.now(); // Get current time for calculation
-      const elapsedMs = Math.max(0, now - item.createdAt); // Ensure non-negative elapsed time in ms
+      const now = Date.now();
+      const elapsedMs = Math.max(0, now - item.createdAt);
 
-      // Calculate different time units
       const totalSeconds = Math.floor(elapsedMs / 1000);
       const totalMinutes = Math.floor(totalSeconds / 60);
       const totalHours = Math.floor(totalMinutes / 60);
-      const totalDays = Math.floor(totalHours / 24); // Same as 'daysSince'
+      const totalDays = Math.floor(totalHours / 24);
 
-      // Determine the value and label to display based on the rules
       let displayValue: string | number;
       let displayLabel: string;
-      let isDaysView = false; // Flag to control layout slightly if needed
+      let isDaysView = false;
+      let baseStyle = styles.hoursMinutesSecondsNumber; // Default to H/M/S style
 
       if (totalDays > 0) {
         displayValue = totalDays;
-        displayLabel = "DAYS SINCE";
+        displayLabel = totalDays === 1 ? "DAY SINCE" : "DAYS SINCE";
         isDaysView = true;
+        baseStyle = styles.daysNumber; // Switch to Days style
       } else if (totalHours >= 1) {
         displayValue = totalHours;
-        displayLabel = totalHours === 1 ? "HOUR AGO" : "HOURS AGO"; // Handle singular/plural
+        displayLabel = totalHours === 1 ? "HOUR SINCE" : "HOURS SINCE";
       } else if (totalMinutes >= 1) {
         displayValue = totalMinutes;
-        displayLabel = totalMinutes === 1 ? "MINUTE AGO" : "MINUTES AGO"; // Handle singular/plural
+        displayLabel = totalMinutes === 1 ? "MINUTE SINCE" : "MINUTES SINCE";
       } else {
         displayValue = totalSeconds;
-        displayLabel = totalSeconds === 1 ? "SECOND AGO" : "SECONDS AGO"; // Handle singular/plural
+        displayLabel = totalSeconds === 1 ? "SECOND SINCE" : "SECONDS SINCE";
       }
 
-      // Format the creation date (remains the same)
-      const formattedDate = format(new Date(item.createdAt), "MMM dd, yyyy"); // Format like: Apr 13, 2025
+      const formattedDate = format(new Date(item.createdAt), "MMM dd, yyyy"); // Corrected format string
 
-      // Decide on font size for the main value dynamically (optional but recommended)
-      const valueFontSize = isDaysView
-        ? styles.daysNumber.fontSize
-        : styles.hoursMinutesSecondsNumber.fontSize;
-      const valueLineHeight = isDaysView
-        ? styles.daysNumber.lineHeight
-        : styles.hoursMinutesSecondsNumber.lineHeight;
+      // Get font size and line height from the determined base style
+      const valueFontSize = baseStyle.fontSize;
+      const valueLineHeight = baseStyle.lineHeight;
 
       return (
-        // <TouchableOpacity onPress={() => Alert.alert("Item Pressed", item.name)}>
-        <View style={styles.cardContainer}>
-          <LinearGradient
-            // TODO: Fine-tune these gradient colors
-            colors={["#FEC9CE", "#FEC9CE", "#FF96A3"]} // Example: Lighter pink to slightly darker pink/coral
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.gradient}
-          >
-            <View style={styles.cardContent}>
-              {/* Left Side: Displays Days OR H/M/S */}
-              <View style={styles.leftColumn}>
-                {/* Apply dynamic font size and line height */}
-                <Text
-                  style={[
-                    styles.daysNumber,
-                    { fontSize: valueFontSize, lineHeight: valueLineHeight },
-                  ]}
-                >
-                  {displayValue}
-                </Text>
-                {/* Use the dynamic label */}
-                <Text style={styles.daysLabel}>{displayLabel}</Text>
-              </View>
+        <TouchableOpacity
+          // onPress={() => Alert.alert("Item Pressed", item.name)} // Example press
+          onLongPress={() => handleArchiveToggle(item.id)} // Long press to archive/unarchive
+          delayLongPress={1000}
+        >
+          <View style={styles.cardContainer}>
+            <LinearGradient
+              colors={["#FEC9CE", "#FF96A1"]}
+              start={{ x: 1, y: 1 }}
+              end={{ x: 0, y: 0 }}
+              style={styles.gradient}
+            >
+              <View style={styles.cardContent}>
+                {/* Left Side */}
+                <View style={styles.leftColumn}>
+                  <Text
+                    style={[
+                      // Apply the base style first (contains fontFamily)
+                      baseStyle,
+                      // Override only specific properties if needed, but fontSize/lineHeight are already in baseStyle
+                      // { fontSize: valueFontSize, lineHeight: valueLineHeight },
+                    ]}
+                    // Use tick in key ONLY if it's H/M/S view and ONLY if item is not archived
+                    key={
+                      !isDaysView && !item.isArchived
+                        ? `time-${tick}`
+                        : `static-${item.id}`
+                    }
+                  >
+                    {displayValue}
+                  </Text>
+                  <Text style={styles.daysLabel}>{displayLabel}</Text>
+                </View>
 
-              {/* Right Side: Date and Name */}
-              <View style={styles.rightColumn}>
-                <Text style={styles.dateText}>{formattedDate}</Text>
-                <Text
-                  style={styles.nameText}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {item.name}
-                </Text>
-              </View>
+                {/* Right Side */}
+                <View style={styles.rightColumn}>
+                  <Text style={styles.dateText}>{formattedDate}</Text>
+                  <Text
+                    style={styles.nameText}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {item.name}
+                  </Text>
+                </View>
 
-              {/* Optional: Notification Bell Icon */}
-              {item.hasNotification && (
+                {/* Optional: Notification Bell Icon */}
+                {item.hasNotification && (
+                  <IconButton
+                    icon="bell-outline"
+                    size={18}
+                    style={styles.notificationIcon}
+                    iconColor={"rgba(0, 0, 0, 0.6)"}
+                  />
+                )}
+
+                {/* Trash Icon */}
                 <IconButton
-                  icon="bell-outline"
-                  size={18}
-                  style={styles.notificationIcon}
-                  iconColor={"rgba(0, 0, 0, 0.6)"} // Adjust color
-                  // onPress={() => Alert.alert("Notification", "Handle notification tap")}
+                  icon="delete-outline"
+                  size={20}
+                  onPress={() => handleDeleteCounter(item.id)}
+                  iconColor={theme.colors.error}
+                  style={styles.deleteIcon}
                 />
-              )}
-            </View>
-
-            {/* --- Placeholder Buttons - REMOVE/REPLACE LATER --- */}
-            <View style={styles.tempActionRow}>
-              <Button
-                mode="text"
-                compact
-                onPress={() => handleArchiveToggle(item.id)}
-                labelStyle={styles.tempButtonLabel}
-              >
-                {item.isArchived ? "Unarchive" : "Archive"}
-              </Button>
-              <Button
-                mode="text"
-                compact
-                onPress={() => handleDeleteCounter(item.id)}
-                labelStyle={styles.tempButtonLabel}
-                textColor={theme.colors.error}
-              >
-                Delete
-              </Button>
-            </View>
-            {/* --- End Placeholder Buttons --- */}
-          </LinearGradient>
-        </View>
-        // </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </View>
+        </TouchableOpacity>
       );
-      // Include dependencies used within the callback
     },
-    [theme.colors.error]
-  ); // theme.colors.error used in temp delete button
+    [theme.colors.error, tick] // Include tick to update H/M/S views
+  );
 
   // --- Main Render ---
-  // Show nothing until fonts and data are loaded (splash screen covers this)
   if (!loaded || !isDataLoaded) {
+    // Keep returning null or a minimal loading indicator while splash screen is visible
+    // Avoid rendering the main layout until ready to prevent flashes
     return null;
   }
-  // Handle font loading error gracefully
   if (error) {
     console.error("Font loading error:", error);
-    // Provide basic UI indicating the error
+    // Handle font error more gracefully if needed
     return (
       <SafeAreaView
         style={[
@@ -335,14 +324,14 @@ export default function Index() {
           { backgroundColor: theme?.colors?.background || "#fff" },
         ]}
       >
-        <View style={styles.centered}>
+        <View style={styles.centeredError}>
           <Text
             style={{ color: theme?.colors?.error || "red", marginBottom: 10 }}
           >
             Error loading application assets.
           </Text>
           <Text style={{ color: theme?.colors?.onSurface || "#000" }}>
-            Please try restarting the app.
+            Please restart the app. Font: {error.message}
           </Text>
         </View>
       </SafeAreaView>
@@ -355,17 +344,17 @@ export default function Index() {
     >
       {/* Custom Header */}
       <Appbar.Header
-        mode="center-aligned" // Or "small", "medium", "large"
-        elevated={false} // No shadow below header
+        mode="center-aligned"
+        elevated={false}
         style={{ backgroundColor: theme.colors.background }}
       >
         <Appbar.Action
           icon="menu"
-          onPress={() =>
-            Alert.alert("Menu Action", "Implement navigation or settings.")
-          }
+          // onPress={() =>
+          //   Alert.alert("Menu Action", "Implement navigation or settings.")
+          // }
         />
-        <Appbar.Content title="" /> {/* Intentionally empty title */}
+        <Appbar.Content title="" />
         <Appbar.Action
           icon="plus"
           size={28}
@@ -379,9 +368,8 @@ export default function Index() {
           value={currentView}
           onValueChange={(value) => setCurrentView(value as "current" | "past")}
           style={styles.segmentButtons}
-          density="medium" // Adjust density for spacing
+          density="medium"
           buttons={[
-            // Apply custom styling to buttons/labels if needed via theme or style prop
             {
               value: "current",
               label: "Current",
@@ -389,6 +377,10 @@ export default function Index() {
                 currentView === "current"
                   ? styles.segmentSelected
                   : styles.segmentUnselected,
+              labelStyle:
+                currentView === "current"
+                  ? styles.segmentSelectedLabel
+                  : styles.segmentUnselectedLabel,
             },
             {
               value: "past",
@@ -397,233 +389,284 @@ export default function Index() {
                 currentView === "past"
                   ? styles.segmentSelected
                   : styles.segmentUnselected,
+              labelStyle:
+                currentView === "past"
+                  ? styles.segmentSelectedLabel
+                  : styles.segmentUnselectedLabel,
             },
           ]}
         />
       </View>
 
-      {/* List of Counters */}
-      <FlatList
-        data={displayedCounters} // Use the filtered list
-        renderItem={renderCounterItem}
-        keyExtractor={(item) => item.id}
-        ListEmptyComponent={
-          // Show message when list is empty
-          <View style={styles.centered}>
-            <Text style={styles.emptyText}>
-              No counters {currentView === "past" ? "archived" : "yet"}.
-            </Text>
-            {currentView === "current" && (
-              <Text style={styles.emptyText}>Press '+' to add one!</Text>
-            )}
-          </View>
-        }
-        contentContainerStyle={styles.listContent} // Padding for the list itself
-      />
+      {/* --- List Area (No Gesture Detector) --- */}
+      <View style={{ flex: 1 }}>
+        <FlatList
+          data={displayedCounters}
+          renderItem={renderCounterItem}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={
+            <View style={styles.centered}>
+              <Text style={styles.emptyText}>
+                No counters {currentView === "past" ? "archived" : "yet"}.
+              </Text>
+              {/* Show loading indicator only during initial load on 'Current' tab */}
+              {currentView === "current" && !isDataLoaded && (
+                <ActivityIndicator style={{ marginTop: 20 }} size="large" />
+              )}
+              {/* Show add prompt only after load and if empty on 'Current' tab */}
+              {currentView === "current" &&
+                isDataLoaded &&
+                displayedCounters.length === 0 && (
+                  <Text style={styles.emptyText}>Press '+' to add one!</Text>
+                )}
+            </View>
+          }
+          contentContainerStyle={styles.listContent}
+        />
+      </View>
 
       {/* Add New Counter Modal */}
-      <Portal>
-        <Modal
-          visible={isModalVisible}
-          onDismiss={() => setIsModalVisible(false)} // Close when tapping outside
-          contentContainerStyle={[
-            styles.modalContainer,
-            { backgroundColor: theme.colors.elevation.level2 },
-          ]} // Modal styling
+
+      <Modal
+        visible={isModalVisible}
+        onDismiss={() => setIsModalVisible(false)}
+        contentContainerStyle={[
+          styles.modalContainer,
+          { backgroundColor: theme.colors.elevation.level2 },
+        ]}
+      >
+        <LinearGradient
+          colors={["#FEC9CE", "#FEC9CE", "#FF96A3"]}
+          start={{ x: 0, y: 1 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.addgradient}
         >
           <Text variant="headlineSmall" style={styles.modalTitle}>
             Add New Counter
           </Text>
           <TextInput
             label="Counter Name"
-            value={newCounterName}
+            // value={newCounterName}
             onChangeText={setNewCounterName}
-            mode="outlined" // Or "flat"
+            mode="outlined"
             style={styles.modalInput}
-            autoFocus // Automatically focus the input
+            // autoFocus
           />
           <View style={styles.modalButtonRow}>
             <Button
-              mode="outlined" // Secondary action style
+              mode="outlined"
               onPress={() => setIsModalVisible(false)}
               style={styles.modalButton}
+              labelStyle={styles.buttonLabel} // Apply consistent label style
             >
               Cancel
             </Button>
             <Button
-              mode="contained" // Primary action style
+              mode="outlined"
               onPress={handleAddCounter}
               style={styles.modalButton}
-              disabled={!newCounterName.trim()} // Disable if name is empty
+              disabled={!newCounterName.trim()}
+              labelStyle={styles.buttonLabel} // Apply consistent label style
             >
               Add
             </Button>
           </View>
-        </Modal>
-      </Portal>
+        </LinearGradient>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 // --- Styles ---
-// TODO: Adjust fonts, colors, spacing meticulously to match the target image
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   centered: {
-    flex: 1,
+    flexGrow: 1, // Use flexGrow instead of flex: 1
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginTop: 50, // Offset from tabs
+    paddingBottom: 50, // Add some padding at the bottom
+    // marginTop: 60, // Remove fixed marginTop if using flexGrow
+  },
+  centeredError: {
+    // Style for error display
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
   segmentContainer: {
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: "15%", // Use percentage for responsive width
-    borderBottomWidth: 1, // Optional separator line
-    borderBottomColor: "#eee", // Optional separator line color
+    paddingVertical: 30,
+    paddingHorizontal: "15%",
   },
   segmentButtons: {
-    // The buttons prop handles individual styling now
+    borderRadius: 10,
   },
   segmentSelected: {
-    // Style for the selected segment button (e.g., background, border)
-    // backgroundColor: '#e0e0e0', // Example
+    backgroundColor: "#FEC9CE",
+    // borderColor: "#FEC9CE",
+    // borderWidth: 1.5, // Make border slightly thicker
   },
   segmentUnselected: {
-    // Style for unselected segment button
+    backgroundColor: "transparent",
+    // borderColor: "#cccccc",
+    // borderWidth: 1.5, // Make border slightly thicker
+  },
+  segmentSelectedLabel: {
+    fontFamily: "Roboto-Regular", // Use bold font
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
+    // textTransform: "uppercase",
+  },
+  segmentUnselectedLabel: {
+    fontFamily: "Roboto-Regular", // Use regular font
+    fontSize: 14,
+    color: "#555",
   },
   listContent: {
-    paddingHorizontal: 15, // Side padding for list items
-    paddingBottom: 30, // Bottom padding
-    paddingTop: 10, // Padding below tabs
+    paddingHorizontal: 15,
+    paddingBottom: 30,
+    paddingTop: 10,
+    flexGrow: 1, // Important for ListEmptyComponent centering
   },
   cardContainer: {
-    marginVertical: 8,
-    borderRadius: 18, // Increased roundness
-    elevation: 4, // Slightly more shadow (Android)
-    shadowColor: "#000", // iOS shadow
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    marginVertical: 7,
+    borderRadius: 18,
+    backgroundColor: "white",
+    elevation: 3,
+    // shadowColor: "#000",
+    // shadowOffset: { width: 0, height: 1 },
+    // shadowOpacity: 0.1,
+    // shadowRadius: 3,
   },
   gradient: {
-    borderRadius: 18, // Match container
-    // Padding applied via cardContent
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  addgradient: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 30,
   },
   cardContent: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 18, // Vertical padding inside card
-    paddingHorizontal: 15, // Horizontal padding inside card
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    position: "relative",
   },
   leftColumn: {
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 85, // Ensure space for large number
-    paddingRight: 15, // Space between columns
-    borderRightWidth: 1, // Optional faint separator line
-    borderRightColor: "rgba(0, 0, 0, 0.1)", // Light separator
+    // minWidth: 85,
+    // maxWidth: 150,
+    width: 120,
+    maxHeight: 100,
+    // paddingRight: 12,
+    paddingTop: 32,
+    // marginRight: 0,
+    // paddingBottom: 10,
+    marginBottom: 7,
+    // borderRightWidth: 1,
+    // borderRightColor: "rgba(0, 0, 0, 0.1)",
+    // marginTop: 10,
   },
   rightColumn: {
-    flex: 1, // Take remaining space
+    flex: 1,
     justifyContent: "center",
-    paddingLeft: 15, // Space after the separator line
+    // margin: 1,
+    marginBottom: 15,
   },
   // Style for the main number display (Days)
   daysNumber: {
-    fontSize: 46,
-    // fontFamily: 'Target-Bold-Font', // Use your specific bold font
-    fontWeight: "bold", // Fallback
+    fontSize: 50,
+    fontFamily: "my-font", // <<< Uses your custom font
+    // fontWeight: "bold", // Fallback if font doesn't load/support weight
     color: "#111",
-    lineHeight: 50, // Adjust line height based on font
+    lineHeight: 55, // Adjust if font requires different line height
+    textAlign: "center",
   },
   // Style for the main number display (Hours, Minutes, Seconds)
   hoursMinutesSecondsNumber: {
-    fontSize: 38, // Slightly smaller font size for H/M/S
-    // fontFamily: 'Target-Bold-Font', // Can use the same font
-    fontWeight: "bold",
+    fontSize: 50, // Keep consistent or adjust as needed
+    fontFamily: "my-font", // <<< Uses your custom font
+    // fontWeight: "bold", // Fallback
     color: "#111",
-    lineHeight: 42, // Adjust line height
+    lineHeight: 70, // Adjust if font requires different line height
+    textAlign: "center",
   },
-  // Style for the label below the number (DAYS SINCE / HOURS AGO etc.)
   daysLabel: {
     fontSize: 10,
-    // fontFamily: 'Target-Regular-Font',
+    fontFamily: "my-font", // Consider a specific font for labels if needed
     color: "#333",
-    letterSpacing: 1.5, // More spacing
-    fontWeight: "500",
-    marginTop: 3,
-    textTransform: "uppercase", // Match image
-    textAlign: "center", // Center the label text
+    letterSpacing: 1.2,
+    fontWeight: "900",
+
+    marginTop: 4,
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   dateText: {
-    fontSize: 12,
-    // fontFamily: 'Target-Regular-Font',
-    color: "#444",
-    marginBottom: 5, // More space below date
+    fontSize: 15,
+    fontFamily: "Roboto-Regular",
+    color: "#555",
+    marginBottom: 4,
+    fontWeight: "bold",
   },
   nameText: {
-    fontSize: 17, // Slightly larger name
-    // fontFamily: 'Target-Regular-Font',
-    fontWeight: "500", // Medium weight
+    fontSize: 20,
+    fontFamily: "Roboto-Regular",
+    fontWeight: "bold",
     color: "#000",
+    lineHeight: 20,
   },
   notificationIcon: {
     position: "absolute",
-    top: 8, // Adjust position
-    right: 8,
+    top: 5,
+    right: 35, // Make space for delete icon
+    zIndex: 1,
+  },
+  deleteIcon: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    zIndex: 1,
   },
   emptyText: {
     textAlign: "center",
-    fontSize: 15,
-    color: "#666", // Softer color
-    marginTop: 10,
+    fontSize: 30,
+    fontFamily: "my-font", // Use a standard font
+    color: "#777",
+    marginTop: 15,
+    lineHeight: 35,
+    fontWeight: "condensedBold",
   },
-  // Modal Styles
-  modalContainer: { padding: 20, margin: 20, borderRadius: 12 },
-  modalTitle: { marginBottom: 20, textAlign: "center" },
-  modalInput: { marginBottom: 20 },
+  modalContainer: {
+    margin: 20,
+    borderRadius: 25,
+    // backgroundColor: "white",
+  }, // Ensure background
+  modalTitle: {
+    marginBottom: 25,
+    textAlign: "center",
+    fontFamily: "roboto",
+    fontSize: 20,
+  },
+  modalInput: { marginBottom: 25, backgroundColor: "#d4d4d4" },
   modalButtonRow: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 10,
+    justifyContent: "space-evenly",
+    marginTop: 15,
   },
-  modalButton: { minWidth: 100 }, // Give buttons some minimum width
-  // Styles for Temp Action Buttons (Remove later)
-  tempActionRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: 5,
-    borderTopWidth: 1,
-    borderColor: "rgba(0,0,0,0.05)",
-    marginTop: 10,
-    marginBottom: -5, // Pull up slightly if needed
-  },
-  tempButtonLabel: {
-    fontSize: 12,
+  modalButton: { minWidth: 110, borderRadius: 8 },
+  buttonLabel: {
+    color: "#000",
+    // Style for modal button text
+    // fontFamily: "Roboto-Bold",
+    fontSize: 14,
   },
 });
-
-// --- REMINDER ---
-// Make sure your main App component (e.g., App.js or App.tsx)
-// wraps the entire application with <PaperProvider> from react-native-paper
-// for the theme and Portal components to work correctly.
-// Example App.js:
-//
-// import * as React from 'react';
-// import { Provider as PaperProvider, DefaultTheme } from 'react-native-paper';
-// import Index from './app/index'; // Adjust path
-//
-// // Optional: Customize theme
-// const theme = { ...DefaultTheme };
-//
-// export default function App() {
-//   return (
-//     <PaperProvider theme={theme}>
-//       <Index />
-//     </PaperProvider>
-//   );
-// }

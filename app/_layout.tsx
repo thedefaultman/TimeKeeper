@@ -5,14 +5,7 @@ import {
   PaperProvider,
 } from "react-native-paper";
 
-const theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: "#5DADE2",
-    secondary: "lightgrey",
-  },
-};
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export function RootLayout() {
   return (
@@ -23,10 +16,20 @@ export function RootLayout() {
 }
 
 export default function wrapper() {
+  const theme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: "#5DADE2",
+      secondary: "lightgrey",
+    },
+  };
   return (
-    <PaperProvider theme={theme}>
-      <StatusBar translucent={true} barStyle={"dark-content"} />
-      <RootLayout />
-    </PaperProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider theme={theme}>
+        <StatusBar translucent={true} barStyle={"dark-content"} />
+        <RootLayout />
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }

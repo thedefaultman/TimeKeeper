@@ -15,7 +15,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.cody669.TimeKeeper"
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +37,9 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts"]
+          "fonts": [
+            "./assets/fonts"
+          ]
         }
       ]
     ],
