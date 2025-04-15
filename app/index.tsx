@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import {
   Modal,
-  Portal,
   useTheme,
   Text,
   Button,
@@ -24,6 +23,12 @@ import * as SplashScreen from "expo-splash-screen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { format } from "date-fns"; // For formatting the creation date
+import DateTimePicker, {
+  DateTimePickerEvent,
+  EvtTypes,
+} from "@react-native-community/datetimepicker";
+
+import { useThemeContext } from "@/context/ThemeContext";
 
 // Keep splash screen visible while fonts load or data loads
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +48,7 @@ const STORAGE_KEY = "@days_since_app_data_v2"; // Use versioned key
 // --- Main App Component ---
 
 export default function Index() {
+  const { toggleTheme } = useThemeContext();
   const theme = useTheme(); // Access theme colors
   const [counters, setCounters] = useState<Counter[]>([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -50,12 +56,63 @@ export default function Index() {
   const [isDataLoaded, setIsDataLoaded] = useState(false); // Track initial data load
   const [currentView, setCurrentView] = useState<"current" | "past">("current"); // State for tabs
   const [tick, setTick] = useState(0); // State to force updates for elapsed time
+  const [date, setDate] = useState<Date | undefined>(undefined);
+  const [mode, setMode] = useState("date");
+  const [show, setShow] = useState(false);
+
+  const onChange = (event: EvtTypes, selectedDate?: Date) => {
+    // Always hide the picker regardless of the event type
+    setShow(false);
+
+    // Only proceed if the user confirmed a selection ('set') and a date was returned
+    if (event === "set" && selectedDate) {
+      const newSelection = selectedDate;
+
+      // Get the current value from state. Default to 'now' if nothing selected yet.
+      // This ensures we have a base date/time to merge into.
+      const previousDate = date || new Date();
+
+      let mergedDate: Date;
+
+      // Check which mode the picker was in when this event fired
+      if (mode === "date") {
+        // User picked a DATE. Keep the TIME from the previous state.
+        mergedDate = new Date(previousDate); // Create a copy to avoid mutation
+        // Update only the date parts from the new selection
+        mergedDate.setFullYear(newSelection.getFullYear());
+        mergedDate.setMonth(newSelection.getMonth());
+        mergedDate.setDate(newSelection.getDate());
+        // The time parts (hours, minutes, seconds) remain unchanged from previousDate
+      } else {
+        mergedDate = new Date(previousDate);
+        mergedDate.setHours(newSelection.getHours());
+        mergedDate.setMinutes(newSelection.getMinutes());
+        mergedDate.setSeconds(newSelection.getSeconds());
+      }
+
+      setDate(mergedDate);
+    }
+  };
+
+  const showMode = (currentMode: string) => {
+    setShow(true);
+    setMode(currentMode);
+  };
+
+  const showDatepicker = () => {
+    showMode("date");
+  };
+
+  const showTimepicker = () => {
+    showMode("time");
+  };
 
   // --- Font Loading ---
   const [loaded, error] = useFonts({
     "Roboto-Regular": require("@/assets/fonts/roboto.ttf"),
     "Roboto-Bold": require("@/assets/fonts/boldonse.ttf"), // Ensure this path is correct
-    "my-font": require("@/assets/fonts/myfont.ttf"), // Ensure this path is correct
+    "my-font": require("@/assets/fonts/myfont.ttf"),
+    "bung-ee": require("@/assets/fonts/bungee.ttf"), // Ensure this path is correct
   });
 
   // --- Load Counters from Storage ---
@@ -146,15 +203,21 @@ export default function Index() {
       Alert.alert("Missing Name", "Please enter a name for the counter.");
       return;
     }
+
+    // This line now correctly uses the picked date/time if 'date' has a value,
+    // otherwise it falls back to the current time.
+    const creationTime = date ? date.getTime() : Date.now();
+
     const newCounter: Counter = {
-      id: Date.now().toString(),
+      id: Date.now().toString(), // Consider a more robust ID like UUID
       name: newCounterName.trim(),
-      createdAt: Date.now(),
+      createdAt: creationTime, // Use the determined time
       isArchived: false,
-      hasNotification: false,
+      hasNotification: false, // Default value
     };
     setCounters((prevCounters) => [newCounter, ...prevCounters]);
     setNewCounterName("");
+    setDate(undefined); // <-- Reset date state back to undefined after adding
     setIsModalVisible(false);
   };
 
@@ -296,7 +359,7 @@ export default function Index() {
                   icon="delete-outline"
                   size={20}
                   onPress={() => handleDeleteCounter(item.id)}
-                  iconColor={theme.colors.error}
+                  iconColor={theme.colors.onPrimary}
                   style={styles.deleteIcon}
                 />
               </View>
@@ -348,17 +411,15 @@ export default function Index() {
         elevated={false}
         style={{ backgroundColor: theme.colors.background }}
       >
-        <Appbar.Action
-          icon="menu"
-          // onPress={() =>
-          //   Alert.alert("Menu Action", "Implement navigation or settings.")
-          // }
-        />
+        <Appbar.Action icon="theme-light-dark" onPress={() => toggleTheme()} />
         <Appbar.Content title="" />
         <Appbar.Action
           icon="plus"
           size={28}
-          onPress={() => setIsModalVisible(true)}
+          onPress={() => {
+            setDate(undefined); // Reset date when opening modal
+            setIsModalVisible(true);
+          }}
         />
       </Appbar.Header>
 
@@ -429,42 +490,88 @@ export default function Index() {
 
       <Modal
         visible={isModalVisible}
-        onDismiss={() => setIsModalVisible(false)}
+        onDismiss={() => {
+          setIsModalVisible(false);
+          setDate(undefined); // Reset date when dismissing modal too
+        }}
         contentContainerStyle={[
           styles.modalContainer,
           { backgroundColor: theme.colors.elevation.level2 },
         ]}
       >
         <LinearGradient
-          colors={["#FEC9CE", "#FEC9CE", "#FF96A3"]}
-          start={{ x: 0, y: 1 }}
-          end={{ x: 1, y: 0 }}
+          colors={["#FEC9CE", "#FF96A3"]}
+          start={{ x: 1, y: 1 }}
+          end={{ x: 0, y: 0 }}
           style={styles.addgradient}
         >
           <Text variant="headlineSmall" style={styles.modalTitle}>
             Add New Counter
           </Text>
           <TextInput
-            label="Counter Name"
+            label="Name"
+            outlineColor="#FF96A3"
+            selectionColor="red"
+            cursorColor="#fff"
+            activeOutlineColor="#fff"
             // value={newCounterName}
             onChangeText={setNewCounterName}
             mode="outlined"
-            style={styles.modalInput}
+            style={[
+              styles.modalInput,
+              { backgroundColor: "#FF96A3", borderRadius: 40 },
+            ]}
             // autoFocus
           />
+          <Button
+            style={styles.modalButton}
+            labelStyle={styles.buttonLabel}
+            mode="outlined"
+            onPress={showDatepicker}
+          >
+            Show Date picker
+          </Button>
+          <Button
+            style={[styles.modalButton, { marginTop: 10 }]}
+            labelStyle={styles.buttonLabel}
+            mode="outlined"
+            onPress={showTimepicker}
+          >
+            Show Time picker
+          </Button>
+          <Text
+            style={[
+              styles.selectedDateText,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
+            {date ? date.toLocaleString() : "Not Selected"}
+          </Text>
+          (
+          {show && (
+            <DateTimePicker
+              value={date || new Date()}
+              mode={mode}
+              is24Hour={true}
+              onChange={onChange}
+            />
+          )}
+          )
           <View style={styles.modalButtonRow}>
             <Button
-              mode="outlined"
-              onPress={() => setIsModalVisible(false)}
-              style={styles.modalButton}
+              mode="elevated"
+              onPress={() => {
+                setIsModalVisible(false);
+              }}
+              style={[styles.modalButton, { backgroundColor: "#ff96a3" }]}
               labelStyle={styles.buttonLabel} // Apply consistent label style
             >
               Cancel
             </Button>
             <Button
-              mode="outlined"
+              mode="elevated"
               onPress={handleAddCounter}
-              style={styles.modalButton}
+              style={[styles.modalButton, { backgroundColor: "#ff96a3" }]}
               disabled={!newCounterName.trim()}
               labelStyle={styles.buttonLabel} // Apply consistent label style
             >
@@ -479,6 +586,12 @@ export default function Index() {
 
 // --- Styles ---
 const styles = StyleSheet.create({
+  selectedDateText: {
+    textAlign: "center",
+    fontSize: 14,
+    // color is set dynamically using theme
+    marginVertical: 15, // Add some space around it
+  },
   container: {
     flex: 1,
   },
@@ -584,8 +697,8 @@ const styles = StyleSheet.create({
   // Style for the main number display (Days)
   daysNumber: {
     fontSize: 50,
-    fontFamily: "my-font", // <<< Uses your custom font
-    // fontWeight: "bold", // Fallback if font doesn't load/support weight
+    fontFamily: "bung-ee", // <<< Uses your custom font
+    // fontWeight: "900", // Fallback if font doesn't load/support weight
     color: "#111",
     lineHeight: 55, // Adjust if font requires different line height
     textAlign: "center",
@@ -593,7 +706,7 @@ const styles = StyleSheet.create({
   // Style for the main number display (Hours, Minutes, Seconds)
   hoursMinutesSecondsNumber: {
     fontSize: 50, // Keep consistent or adjust as needed
-    fontFamily: "my-font", // <<< Uses your custom font
+    fontFamily: "bung-ee", // <<< Uses your custom font
     // fontWeight: "bold", // Fallback
     color: "#111",
     lineHeight: 70, // Adjust if font requires different line height
@@ -653,20 +766,18 @@ const styles = StyleSheet.create({
   modalTitle: {
     marginBottom: 25,
     textAlign: "center",
-    fontFamily: "roboto",
-    fontSize: 20,
+    fontFamily: "Roboto-Bold",
+    fontSize: 15,
   },
-  modalInput: { marginBottom: 25, backgroundColor: "#d4d4d4" },
+  modalInput: { marginBottom: 25 },
   modalButtonRow: {
     flexDirection: "row",
     justifyContent: "space-evenly",
     marginTop: 15,
   },
-  modalButton: { minWidth: 110, borderRadius: 8 },
+  modalButton: { minWidth: 110, borderRadius: 8, backgroundColor: "#ff96a3" },
   buttonLabel: {
     color: "#000",
-    // Style for modal button text
-    // fontFamily: "Roboto-Bold",
     fontSize: 14,
   },
 });
