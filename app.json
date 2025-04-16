@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
       "package": "com.cody669.TimeKeeper"
     },
@@ -29,17 +29,15 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 150,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#d4d4d4"
         }
       ],
       [
         "expo-font",
         {
-          "fonts": [
-            "./assets/fonts"
-          ]
+          "fonts": ["./assets/fonts"]
         }
       ]
     ],

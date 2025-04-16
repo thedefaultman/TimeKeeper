@@ -7,9 +7,9 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator, // Added for loading state
+  Modal,
 } from "react-native";
 import {
-  Modal,
   useTheme,
   Text,
   Button,
@@ -60,37 +60,27 @@ export default function Index() {
   const [mode, setMode] = useState("date");
   const [show, setShow] = useState(false);
 
-  const onChange = (event: EvtTypes, selectedDate?: Date) => {
-    // Always hide the picker regardless of the event type
+  const onChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShow(false);
-
-    // Only proceed if the user confirmed a selection ('set') and a date was returned
-    if (event === "set" && selectedDate) {
+    if (event.type === "set" && selectedDate) {
       const newSelection = selectedDate;
-
-      // Get the current value from state. Default to 'now' if nothing selected yet.
-      // This ensures we have a base date/time to merge into.
       const previousDate = date || new Date();
-
       let mergedDate: Date;
-
-      // Check which mode the picker was in when this event fired
       if (mode === "date") {
-        // User picked a DATE. Keep the TIME from the previous state.
-        mergedDate = new Date(previousDate); // Create a copy to avoid mutation
-        // Update only the date parts from the new selection
+        mergedDate = new Date(previousDate);
         mergedDate.setFullYear(newSelection.getFullYear());
         mergedDate.setMonth(newSelection.getMonth());
         mergedDate.setDate(newSelection.getDate());
-        // The time parts (hours, minutes, seconds) remain unchanged from previousDate
       } else {
         mergedDate = new Date(previousDate);
         mergedDate.setHours(newSelection.getHours());
         mergedDate.setMinutes(newSelection.getMinutes());
         mergedDate.setSeconds(newSelection.getSeconds());
       }
-
       setDate(mergedDate);
+    } else if (event.type === "dismissed") {
+      setShow(false);
+      setDate(undefined);
     }
   };
 
@@ -192,6 +182,7 @@ export default function Index() {
   // --- Filtered Counters for Display ---
   const displayedCounters = useMemo(() => {
     // console.log(`Filtering counters for view: ${currentView}`);
+    // console.log(tick);
     return counters.filter((c) =>
       currentView === "current" ? !c.isArchived : c.isArchived
     );
@@ -217,7 +208,7 @@ export default function Index() {
     };
     setCounters((prevCounters) => [newCounter, ...prevCounters]);
     setNewCounterName("");
-    setDate(undefined); // <-- Reset date state back to undefined after adding
+    // setDate(undefined); // <-- Reset date state back to undefined after adding
     setIsModalVisible(false);
   };
 
@@ -277,18 +268,18 @@ export default function Index() {
 
       if (totalDays > 0) {
         displayValue = totalDays;
-        displayLabel = totalDays === 1 ? "DAY SINCE" : "DAYS SINCE";
+        displayLabel = totalDays === 1 ? "DAYS SINCE" : "DAYS SINCE";
         isDaysView = true;
         baseStyle = styles.daysNumber; // Switch to Days style
       } else if (totalHours >= 1) {
         displayValue = totalHours;
-        displayLabel = totalHours === 1 ? "HOUR SINCE" : "HOURS SINCE";
+        displayLabel = totalHours === 1 ? "HOURS SINCE" : "HOURS SINCE";
       } else if (totalMinutes >= 1) {
         displayValue = totalMinutes;
-        displayLabel = totalMinutes === 1 ? "MINUTE SINCE" : "MINUTES SINCE";
+        displayLabel = totalMinutes === 1 ? "MINUTES SINCE" : "MINUTES SINCE";
       } else {
         displayValue = totalSeconds;
-        displayLabel = totalSeconds === 1 ? "SECOND SINCE" : "SECONDS SINCE";
+        displayLabel = totalSeconds === 1 ? "SECONDS SINCE" : "SECONDS SINCE";
       }
 
       const formattedDate = format(new Date(item.createdAt), "MMM dd, yyyy"); // Corrected format string
@@ -417,7 +408,7 @@ export default function Index() {
           icon="plus"
           size={28}
           onPress={() => {
-            setDate(undefined); // Reset date when opening modal
+            // setDate(undefined); // Reset date when opening modal
             setIsModalVisible(true);
           }}
         />
@@ -489,12 +480,16 @@ export default function Index() {
       {/* Add New Counter Modal */}
 
       <Modal
+        animationType="fade"
+        hardwareAccelerated
         visible={isModalVisible}
-        onDismiss={() => {
+        statusBarTranslucent
+        transparent
+        onRequestClose={() => {
           setIsModalVisible(false);
-          setDate(undefined); // Reset date when dismissing modal too
+          setDate(undefined);
         }}
-        contentContainerStyle={[
+        style={[
           styles.modalContainer,
           { backgroundColor: theme.colors.elevation.level2 },
         ]}
@@ -512,7 +507,7 @@ export default function Index() {
             label="Name"
             outlineColor="#FF96A3"
             selectionColor="red"
-            cursorColor="#fff"
+            // cursorColor="#fff"
             activeOutlineColor="#fff"
             // value={newCounterName}
             onChangeText={setNewCounterName}
@@ -521,7 +516,7 @@ export default function Index() {
               styles.modalInput,
               { backgroundColor: "#FF96A3", borderRadius: 40 },
             ]}
-            // autoFocus
+            autoFocus
           />
           <Button
             style={styles.modalButton}
@@ -542,7 +537,7 @@ export default function Index() {
           <Text
             style={[
               styles.selectedDateText,
-              { color: theme.colors.onSurfaceVariant },
+              { color: theme.colors.background },
             ]}
           >
             {date ? date.toLocaleString() : "Not Selected"}
@@ -550,9 +545,10 @@ export default function Index() {
           (
           {show && (
             <DateTimePicker
-              value={date || new Date()}
+              value={date ? date : new Date()}
               mode={mode}
-              is24Hour={true}
+              is24Hour={false}
+              display="spinner"
               onChange={onChange}
             />
           )}
@@ -644,23 +640,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingBottom: 30,
     paddingTop: 10,
-    flexGrow: 1, // Important for ListEmptyComponent centering
+    flexGrow: 1,
   },
   cardContainer: {
     marginVertical: 7,
     borderRadius: 18,
     backgroundColor: "white",
     elevation: 3,
-    // shadowColor: "#000",
-    // shadowOffset: { width: 0, height: 1 },
-    // shadowOpacity: 0.1,
-    // shadowRadius: 3,
   },
   gradient: {
     borderRadius: 18,
     overflow: "hidden",
   },
   addgradient: {
+    flex: 1,
+    justifyContent: "center",
     width: "100%",
     borderRadius: 16,
     padding: 30,
@@ -669,43 +663,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 15,
-    paddingHorizontal: 15,
+    paddingHorizontal: 10,
     position: "relative",
   },
   leftColumn: {
     alignItems: "center",
     justifyContent: "center",
-    // minWidth: 85,
-    // maxWidth: 150,
-    width: 120,
-    maxHeight: 100,
-    // paddingRight: 12,
-    paddingTop: 32,
-    // marginRight: 0,
-    // paddingBottom: 10,
-    marginBottom: 7,
-    // borderRightWidth: 1,
-    // borderRightColor: "rgba(0, 0, 0, 0.1)",
-    // marginTop: 10,
+    width: 110,
   },
   rightColumn: {
     flex: 1,
     justifyContent: "center",
-    // margin: 1,
-    marginBottom: 15,
+    alignItems: "baseline",
+
+    marginBottom: 30,
   },
   // Style for the main number display (Days)
   daysNumber: {
-    fontSize: 50,
+    fontSize: 55,
     fontFamily: "bung-ee", // <<< Uses your custom font
     // fontWeight: "900", // Fallback if font doesn't load/support weight
     color: "#111",
-    lineHeight: 55, // Adjust if font requires different line height
+    lineHeight: 70, // Adjust if font requires different line height
     textAlign: "center",
   },
   // Style for the main number display (Hours, Minutes, Seconds)
   hoursMinutesSecondsNumber: {
-    fontSize: 50, // Keep consistent or adjust as needed
+    fontSize: 55, // Keep consistent or adjust as needed
     fontFamily: "bung-ee", // <<< Uses your custom font
     // fontWeight: "bold", // Fallback
     color: "#111",
@@ -760,6 +744,8 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     margin: 20,
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 25,
     // backgroundColor: "white",
   }, // Ensure background
