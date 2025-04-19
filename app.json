@@ -16,7 +16,20 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.cody669.TimeKeeper"
+      "package": "com.cody669.TimeKeeper",
+
+      "splash": {
+        "image": "./assets/images/splash-icon.png",
+        "resizeMode": "cover",
+        "backgroundColor": "#ffffff",
+        "image-width": 150,
+        "dark": {
+          "image": "./assets/images/splash-icon.png",
+          "image-width": 150,
+          "resizeMode": "cover",
+          "backgroundColor": "#000000"
+        }
+      }
     },
     "web": {
       "bundler": "metro",
@@ -25,15 +38,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 150,
-          "resizeMode": "contain",
-          "backgroundColor": "#d4d4d4"
-        }
-      ],
       [
         "expo-font",
         {

@@ -47,8 +47,10 @@ const STORAGE_KEY = "@days_since_app_data_v2"; // Use versioned key
 
 // --- Main App Component ---
 
+type theme = "light" | "dark" | "system";
+
 export default function Index() {
-  const { toggleTheme } = useThemeContext();
+  const { toggleTheme, setTheme } = useThemeContext();
   const theme = useTheme(); // Access theme colors
   const [counters, setCounters] = useState<Counter[]>([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -59,6 +61,14 @@ export default function Index() {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [mode, setMode] = useState("date");
   const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const themesetter = async () => {
+      const theme = await AsyncStorage.getItem("theme");
+      if (theme) setTheme(theme as theme);
+    };
+    themesetter();
+  }, []);
 
   const onChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShow(false);
@@ -268,18 +278,18 @@ export default function Index() {
 
       if (totalDays > 0) {
         displayValue = totalDays;
-        displayLabel = totalDays === 1 ? "DAYS SINCE" : "DAYS SINCE";
+        displayLabel = totalDays === 1 ? "DAY SINCE" : "DAYS SINCE";
         isDaysView = true;
         baseStyle = styles.daysNumber; // Switch to Days style
       } else if (totalHours >= 1) {
         displayValue = totalHours;
-        displayLabel = totalHours === 1 ? "HOURS SINCE" : "HOURS SINCE";
+        displayLabel = "HOURS SINCE";
       } else if (totalMinutes >= 1) {
         displayValue = totalMinutes;
-        displayLabel = totalMinutes === 1 ? "MINUTES SINCE" : "MINUTES SINCE";
+        displayLabel = "MINUTES SINCE";
       } else {
         displayValue = totalSeconds;
-        displayLabel = totalSeconds === 1 ? "SECONDS SINCE" : "SECONDS SINCE";
+        displayLabel = "SECONDS SINCE";
       }
 
       const formattedDate = format(new Date(item.createdAt), "MMM dd, yyyy"); // Corrected format string
@@ -450,7 +460,6 @@ export default function Index() {
         />
       </View>
 
-      {/* --- List Area (No Gesture Detector) --- */}
       <View style={{ flex: 1 }}>
         <FlatList
           data={displayedCounters}
