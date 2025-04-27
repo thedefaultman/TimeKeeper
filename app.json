@@ -2,7 +2,7 @@
   "expo": {
     "name": "Time Keeper",
     "slug": "Time Keeper",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -42,6 +42,19 @@
         "expo-font",
         {
           "fonts": ["./assets/fonts"]
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#232323",
+          "image": "./assets/images/splash-icon.png",
+          "dark": {
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#000000"
+          },
+          "imageWidth": 150,
+          "resizeMode": "cover"
         }
       ]
     ],
