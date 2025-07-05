@@ -29,12 +29,14 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 
 import { useThemeContext } from "@/context/ThemeContext";
+import Details from "./details";
+import { useRouter } from "expo-router";
 
 // Keep splash screen visible while fonts load or data loads
 SplashScreen.preventAutoHideAsync();
 
 // --- Counter Interface (Revised) ---
-interface Counter {
+export interface Counter {
   id: string;
   name: string;
   createdAt: number; // Timestamp (milliseconds since epoch) when created
@@ -61,6 +63,9 @@ export default function Index() {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [mode, setMode] = useState("date");
   const [show, setShow] = useState(false);
+  const [detailsModalVisible, setDetailsModalVisible] =
+    useState<boolean>(false);
+  const [selectedCounter, setSelectedCounter] = useState<Counter>(counters[0]);
 
   useEffect(() => {
     const themesetter = async () => {
@@ -68,6 +73,7 @@ export default function Index() {
       if (theme) setTheme(theme as theme);
     };
     themesetter();
+    setDate(undefined);
   }, []);
 
   const onChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
@@ -218,7 +224,7 @@ export default function Index() {
     };
     setCounters((prevCounters) => [newCounter, ...prevCounters]);
     setNewCounterName("");
-    // setDate(undefined); // <-- Reset date state back to undefined after adding
+    setDate(undefined); // <-- Reset date state back to undefined after adding
     setIsModalVisible(false);
   };
 
@@ -260,6 +266,8 @@ export default function Index() {
     );
   };
 
+  const router = useRouter();
+
   // --- Render Item for FlatList ---
   const renderCounterItem = useCallback(
     ({ item }: { item: Counter }) => {
@@ -300,7 +308,13 @@ export default function Index() {
 
       return (
         <TouchableOpacity
-          // onPress={() => Alert.alert("Item Pressed", item.name)} // Example press
+          onPress={() => {
+            setSelectedCounter(item);
+            router.push({
+              pathname: "/details",
+              params: { creation: item.createdAt, name: item.name },
+            });
+          }} // Example press
           onLongPress={() => handleArchiveToggle(item.id)} // Long press to archive/unarchive
           delayLongPress={1000}
         >
@@ -490,7 +504,8 @@ export default function Index() {
 
       <Modal
         animationType="fade"
-        hardwareAccelerated
+        // hardwareAccelerated
+
         visible={isModalVisible}
         statusBarTranslucent
         transparent
@@ -509,15 +524,18 @@ export default function Index() {
           end={{ x: 0, y: 0 }}
           style={styles.addgradient}
         >
-          <Text variant="headlineSmall" style={styles.modalTitle}>
+          <Text
+            variant="headlineSmall"
+            style={[styles.modalTitle, { color: "#000" }]}
+          >
             Add New Counter
           </Text>
           <TextInput
             label="Name"
-            outlineColor="#FF96A3"
+            outlineColor="#000"
             selectionColor="red"
             // cursorColor="#fff"
-            activeOutlineColor="#fff"
+            activeOutlineColor="#000"
             // value={newCounterName}
             onChangeText={setNewCounterName}
             mode="outlined"
@@ -543,13 +561,8 @@ export default function Index() {
           >
             Show Time picker
           </Button>
-          <Text
-            style={[
-              styles.selectedDateText,
-              { color: theme.colors.background },
-            ]}
-          >
-            {date ? date.toLocaleString() : "Not Selected"}
+          <Text style={[styles.selectedDateText, { color: "#000" }]}>
+            {date ? date.toLocaleString() : "Select new date"}
           </Text>
           (
           {show && (
@@ -569,7 +582,7 @@ export default function Index() {
                 setIsModalVisible(false);
               }}
               style={[styles.modalButton, { backgroundColor: "#ff96a3" }]}
-              labelStyle={styles.buttonLabel} // Apply consistent label style
+              labelStyle={styles.buttonLabel}
             >
               Cancel
             </Button>
@@ -577,8 +590,8 @@ export default function Index() {
               mode="elevated"
               onPress={handleAddCounter}
               style={[styles.modalButton, { backgroundColor: "#ff96a3" }]}
-              disabled={!newCounterName.trim()}
-              labelStyle={styles.buttonLabel} // Apply consistent label style
+              // disabled={newCounterName.trim() === ""}
+              labelStyle={styles.buttonLabel}
             >
               Add
             </Button>
@@ -664,7 +677,9 @@ const styles = StyleSheet.create({
   addgradient: {
     flex: 1,
     justifyContent: "center",
+
     width: "100%",
+    // height: "10%",
     borderRadius: 16,
     padding: 30,
   },
@@ -678,7 +693,8 @@ const styles = StyleSheet.create({
   leftColumn: {
     alignItems: "center",
     justifyContent: "center",
-    width: 110,
+    width: 130,
+    // maxHeight: 150,
   },
   rightColumn: {
     flex: 1,
@@ -752,6 +768,7 @@ const styles = StyleSheet.create({
     fontWeight: "condensedBold",
   },
   modalContainer: {
+    flex: 1,
     margin: 20,
     justifyContent: "center",
     alignItems: "center",
@@ -770,7 +787,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-evenly",
     marginTop: 15,
   },
-  modalButton: { minWidth: 110, borderRadius: 8, backgroundColor: "#ff96a3" },
+  modalButton: {
+    minWidth: 110,
+    borderRadius: 8,
+    backgroundColor: "#ff96a3",
+  },
   buttonLabel: {
     color: "#000",
     fontSize: 14,

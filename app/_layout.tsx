@@ -12,9 +12,17 @@ import { ThemeProvider, useThemeContext } from "@/context/ThemeContext"; // Adju
 export function RootLayout() {
   return (
     <Stack>
-      {/* Configure your screens here */}
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      {/* <Stack.Screen name="details" options={{ title: "Details" }} /> */}
+      <Stack.Screen
+        name="index"
+        options={{ headerShown: false, animation: "fade" }}
+      />
+      <Stack.Screen
+        name="details"
+        options={{
+          headerShown: false,
+          animation: "fade",
+        }}
+      />
     </Stack>
   );
 }
@@ -77,7 +85,6 @@ export default function Layout() {
     // GestureHandlerRootView should usually be near the root as well
     <ThemeProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        {/* AppContent contains PaperProvider and needs the theme context */}
         <AppContent />
       </GestureHandlerRootView>
     </ThemeProvider>
