@@ -1,0 +1,186 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Setup Expo CLI (if needed)
+      run: |
+        if [ -f "app.json" ] || [ -f "app.config.js" ]; then
+          echo "Expo project detected, installing Expo CLI"
+          npm install -g @expo/cli
+          # Ensure the global bin directory is in PATH
+          echo "$(npm config get prefix)/bin" >> $GITHUB_PATH
+        fi
+
+    - name: Generate native code (Expo prebuild)
+      run: |
+        if [ -f "app.json" ] || [ -f "app.config.js" ]; then
+          echo "Running Expo prebuild to generate native Android code"
+          if [ ! -d "android" ]; then
+            echo "Android directory not found, running prebuild..."
+            
+            # Always install/update expo package for Expo projects (required for prebuild)
+            echo "Installing/updating expo package (required for prebuild)..."
+            npm install expo@latest
+            
+            # Also install expo-modules-autolinking explicitly if needed
+            if ! npm list expo-modules-autolinking > /dev/null 2>&1; then
+              echo "Installing expo-modules-autolinking..."
+              npm install expo-modules-autolinking@latest
+            fi
+            
+            # Use CI=1 instead of --non-interactive (as recommended by Expo CLI)
+            echo "Running prebuild with CI=1..."
+            CI=1 npx --yes @expo/cli@latest prebuild --platform android --no-install
+            
+            # Verify prebuild worked
+            if [ ! -d "android" ]; then
+              echo "Error: Prebuild failed to create android directory"
+              echo "Attempting with basic prebuild command..."
+              CI=1 npx --yes @expo/cli@latest prebuild --no-install
+            fi
+            
+            # Final verification
+            if [ ! -d "android" ]; then
+              echo "Error: Prebuild failed to create android directory after all attempts"
+              exit 1
+            fi
+            echo "Prebuild completed successfully"
+            
+            # Install/update dependencies after prebuild (required for Gradle)
+            echo "Installing dependencies after prebuild..."
+            npm install
+          else
+            echo "Android folder already exists, skipping prebuild"
+          fi
+        else
+          echo "Regular React Native project, native code should already exist"
+          if [ ! -d "android" ]; then
+            echo "Error: Neither Expo project nor React Native project with android folder found"
+            exit 1
+          fi
+        fi
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Make Gradlew executable
+      run: cd android && chmod +x ./gradlew
+
+    - name: Build Android APK
+      run: |
+        cd android
+        
+        # Debug: Check Node.js and environment
+        echo "Node.js version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Checking package.json..."
+        ls -la ../package.json
+        
+        # Debug: Check what's in settings.gradle that's causing the issue
+        echo "Checking settings.gradle line 3..."
+        head -5 settings.gradle
+        
+        # Debug: Check if React Native CLI is available
+        echo "Checking React Native CLI..."
+        npx react-native --version || echo "React Native CLI not available"
+        
+        # Create basic metro.config.js if it doesn't exist
+        if [ ! -f "../metro.config.js" ]; then
+          echo "Creating metro.config.js..."
+          cat > ../metro.config.js << 'EOF'
+const { getDefaultConfig } = require('expo/metro-config');
+const config = getDefaultConfig(__dirname);
+module.exports = config;
+EOF
+        fi
+        
+        # Clean any existing build artifacts
+        ./gradlew clean
+        
+        # Try to run the Node command manually to see what fails
+        echo "Testing Node.js command that's failing..."
+        node -e "console.log('Node.js is working')" || echo "Node.js basic test failed"
+        
+        # Build release APK with more verbose output
+        ./gradlew assembleRelease --stacktrace --info
+
+
+
+    - name: Upload Android APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: android/app/build/outputs/apk/release/*.apk
+        retention-days: 30
+
+
+    - name: Upload artifacts to S3
+      if: always()
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: us-east-2
+      run: |
+        # Upload React Native builds and record usage
+        if [ -d android/app/build/outputs/apk/release ]; then
+          for apk in android/app/build/outputs/apk/release/*.apk; do
+            if [ -f "$apk" ]; then
+              FILE_SIZE=$(stat -c%s "$apk")
+              FILENAME=$(basename "$apk")
+              aws s3 cp "$apk" s3://mobile-latch/artifacts/${{ github.run_id }}/android/$FILENAME
+              curl -X POST "${{ secrets.BACKEND_URL }}/api/storage-usage/record-from-workflow" \
+                -H "Content-Type: application/json" \
+                -H "x-github-run-id: ${{ github.run_id }}" \
+                -H "x-github-repo: ${{ github.repository }}" \
+                -d "{\"provider\": \"s3\", \"bucket\": \"mobile-latch\", \"path\": \"artifacts/${{ github.run_id }}/android/$FILENAME\", \"size\": $FILE_SIZE, \"artifactType\": \"apk\"}"
+            fi
+          done
+        fi
+        if [ -d ios/build ]; then
+          tar -czf ios-build.tar.gz -C ios/build .
+          FILE_SIZE=$(stat -c%s ios-build.tar.gz)
+          aws s3 cp ios-build.tar.gz s3://mobile-latch/artifacts/${{ github.run_id }}/ios/ios-build.tar.gz
+          curl -X POST "${{ secrets.BACKEND_URL }}/api/storage-usage/record-from-workflow" \
+            -H "Content-Type: application/json" \
+            -H "x-github-run-id: ${{ github.run_id }}" \
+            -H "x-github-repo: ${{ github.repository }}" \
+            -d "{\"provider\": \"s3\", \"bucket\": \"mobile-latch\", \"path\": \"artifacts/${{ github.run_id }}/ios/ios-build.tar.gz\", \"size\": $FILE_SIZE, \"artifactType\": \"ipa\"}"
+        fi
+        echo "Artifacts uploaded to s3://mobile-latch/artifacts/${{ github.run_id }}/"
